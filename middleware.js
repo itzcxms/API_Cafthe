@@ -14,7 +14,7 @@ const verifyToken = (req, res, next) => {
         req.client = decoded; // user ou client jsp
         next();
     });
-
+d
 };
 
 const authorizeRoles = (role) => {
