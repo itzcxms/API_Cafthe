@@ -271,10 +271,6 @@ router.get("/panier/:client_id", (req, res) => {
  * ➤ ROUTE : Supprimer un article du panier
  * ➤ URL : DELETE /api/panier/:id
  */
-/**
- * ➤ ROUTE : Supprimer un article du panier
- * ➤ URL : DELETE /api/panier/:id
- */
 router.delete("/panier/:id", (req, res) => {
     const produitId = req.params.id;
     const clientId = req.query.client_id; // Récupérer client_id depuis les paramètres de l'URL
@@ -381,13 +377,6 @@ router.post("/order", (req, res) => {
                         (err) => {
                             if (err) return res.status(500).json({ message: "❌ Erreur lors de l'ajout des produits à la commande" });
 
-                            // Ajouter le paiement
-                            db.query(
-                                "INSERT INTO paiement (commande_id, montant, methode, statut, date_paiement) VALUES (?, ?, ?, ?, NOW())",
-                                [commande_id, total, methode_paiement, "En attente"],
-                                (err) => {
-                                    if (err) return res.status(500).json({ message: "❌ Erreur lors de l'ajout du paiement" });
-
                                     // Ajouter l'expédition
                                     db.query(
                                         "INSERT INTO expeditions (commande_id, adresse_livraison, transporteur, date_expedition, date_livraison_estimee) VALUES (?, ?, ?, NULL, DATE_ADD(NOW(), INTERVAL 5 DAY))",
@@ -407,8 +396,6 @@ router.post("/order", (req, res) => {
                                             );
                                         }
                                     );
-                                }
-                            );
                         }
                     );
                 }
@@ -426,28 +413,74 @@ router.post("/order", (req, res) => {
  *     "new_mdp": "test2"
  * }
  */
-router.put("/clients/newPassword/:id", (req, res) => {
+router.put("/clients/nouveauMdp/:id", (req, res) => {
+    console.log("Données reçues :", req.body); // Vérifie ce qui est reçu
+
     const id = req.params.id;
     const { last_mdp, new_mdp } = req.body;
 
-    db.query("SELECT mot_de_passe FROM clients WHERE id = ?", [id], (err, result) => {
+    db.query("SELECT mot_de_passe FROM utilisateurs WHERE id = ?", [id], (err, result) => {
         if (err) return res.status(500).json('Erreur serveur');
+        if (result.length === 0) return res.status(404).json({ message: "❌ Utilisateur introuvable" });
 
         // Comparer les mots de passe
         bcrypt.compare(last_mdp, result[0].mot_de_passe, (err, isMatch) => {
-            if (err) return response.status(500).json({message:'❌ Erreur serveur'});
-            if (!isMatch) return response.status(401).json({message:'❌ Pas les mêmes mdp'});
+            if (err) return res.status(500).json({message:'❌ Erreur serveur'});
 
-            bcrypt.hash(new_mdp, 10, (err, result) => {
+            console.log("Mot de passe en base :", result[0].mot_de_passe);
+            console.log("Mot de passe entré :", last_mdp);
+            console.log("Résultat de la comparaison :", isMatch);
+
+            if (!isMatch) return res.status(401).json({message:'❌ Pas les mêmes mdp'});
+
+            bcrypt.hash(new_mdp, 10, (err, hashMdp) => {
                 if (err) {
                     return res.status(500).json("❌ Problème Hash")
-
-                    //db.query("UPDATE utilisateurs SET mot_de_passe = ? WHERE id")
                 }
+
+                db.query("UPDATE utilisateurs SET mot_de_passe = ? WHERE id = ?", [hashMdp], (err) => {
+                    if (err) return res.status(500).json({ message: "❌ Erreur lors de la mise à jour du mot de passe" });
+
+                    res.status(200).json({ message: "✅ Mot de passe changé avec succès !" });
+                })
             })
         });
     });
 });
+
+/**
+ * ➤ ROUTE : Récupérer l'historique des commandes d'un utilisateur
+ */
+router.get("/orders", (req, res) => {
+    const { user_id } = req.query;
+
+    if (!user_id) {
+        return res.status(400).json({ message: "L'ID du client est requis." });
+    }
+
+    db.query(
+        `SELECT c.id, c.total, c.statut, c.date_commande, d.produit_id, p.nom, d.quantite
+         FROM commandes c
+         JOIN details_commandes d ON c.id = d.commande_id
+         JOIN produits p ON d.produit_id = p.id
+         WHERE c.client_id = ?
+         ORDER BY c.date_commande DESC`,
+        [user_id],
+        (err, result) => {
+            if (err) {
+                console.error("Erreur lors de la récupération des commandes :", err);
+                return res.status(500).json({ message: "Erreur interne du serveur" });
+            }
+
+            if (result.length === 0) {
+                return res.status(404).json({ message: "Aucune commande trouvée pour cet utilisateur." });
+            }
+
+            res.status(200).json(result);
+        }
+    );
+});
+
 
 /**
  * ➤ ROUTE PROTÉGÉE : Récupérer les commandes d'un client connecté
